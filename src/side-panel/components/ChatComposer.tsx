@@ -20,6 +20,7 @@ import type { ModelRequestMessage } from "../../shared/models/types";
 import { useAppStore, type ChatFollowUpItem } from "../state/appStore";
 import { resolveEffectiveChatPreferences } from "../state/appStorePreferences";
 import { BoundaryChoiceDialog } from "./BoundaryChoiceDialog";
+import { ModelSelector } from "./ModelSelector";
 import { PromptInlineEditor } from "./PromptInlineEditor";
 
 const MAX_IMAGE_ATTACHMENTS = 5;
@@ -63,6 +64,8 @@ const BROWSER_AUTOMATION_MODE_OPTIONS: Array<{ mode: BrowserAutomationMode; labe
 interface ChatComposerProps {
   canSend: boolean;
   matchedRuleLabel: string;
+  onOpenHistory: () => void;
+  onOpenChatPreferences: () => void;
 }
 
 interface ComposerSwitchProps {
@@ -70,20 +73,21 @@ interface ComposerSwitchProps {
   checked: boolean;
   disabled?: boolean;
   icon: SwitchIconName;
+  className?: string;
   label: string;
   onToggle: () => void;
 }
 
-function ComposerSwitch({ ariaLabel, checked, disabled, icon, label, onToggle }: ComposerSwitchProps) {
+function ComposerSwitch({ ariaLabel, checked, disabled, icon, className, label, onToggle }: ComposerSwitchProps) {
   return (
     <button
-      className="composer-switch"
+      className={className ? `composer-switch ${className}` : "composer-switch"}
       type="button"
       role="switch"
       aria-label={ariaLabel}
       aria-checked={checked}
       disabled={disabled}
-      title={label}
+      data-tip={label}
       onClick={onToggle}
     >
       <svg className="composer-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -93,7 +97,7 @@ function ComposerSwitch({ ariaLabel, checked, disabled, icon, label, onToggle }:
   );
 }
 
-export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
+export function ChatComposer({ canSend, matchedRuleLabel, onOpenHistory, onOpenChatPreferences }: ChatComposerProps) {
   const [input, setInput] = useState("");
   const [promptInvocations, setPromptInvocations] = useState<ChatPromptInvocation[]>([]);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -129,11 +133,14 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
   const streamMode = useAppStore((state) => state.streamMode);
   const browserControlEnabled = useAppStore((state) => state.browserControlEnabled);
   const browserAutomationMode = useAppStore((state) => state.browserAutomationMode);
+  const setBrowserControlEnabled = useAppStore((state) => state.setBrowserControlEnabled);
   const pendingBoundaryChoice = useAppStore((state) => state.pendingBoundaryChoice);
   const contextMode = useAppStore((state) => state.contextMode);
   const appendPageContextToSystemPrompt = useAppStore((state) => state.appendPageContextToSystemPrompt);
   const sending = useAppStore((state) => state.sending);
   const pageContext = useAppStore((state) => state.pageContext);
+  const createChatSession = useAppStore((state) => state.createChatSession);
+  const composerHasDraft = useAppStore((state) => state.composerHasDraft);
   const activeSession = useAppStore((state) =>
     state.privateModeActive
       ? state.privateChatSession
@@ -666,51 +673,80 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
           ) : null}
         </div>
       ) : null}
-      {attachments.length > 0 ? (
-        <div className="image-preview-strip" aria-label="已添加图片">
-          {attachments.map((attachment) => (
-            <div className="image-preview-thumb-wrap" key={attachment.id}>
-              <button className="image-preview-thumb" type="button" aria-label={`查看图片 ${attachment.name}`} onClick={() => setPreviewAttachment(attachment)}>
-                <img src={attachment.dataUrl} alt="" />
-              </button>
-              <button
-                className="image-preview-remove"
-                type="button"
-                aria-label={`删除图片 ${attachment.name}`}
-                title="删除图片"
-                onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <div className="context-strip">
-        <button
-          className="ui-button-secondary context-view-button"
-          type="button"
-          onClick={() => {
-            setContextDialogOpen(true);
-            void loadContextTabs();
-          }}
-        >
-          选择标签页
-        </button>
-        <span className="context-chip">{matchedRuleLabel}</span>
-        <button className="ui-button-secondary" type="button" onClick={() => void refreshPageContext()}>
-          刷新
-        </button>
-        {currentModelSupportsVision ? (
-          <button className="ui-button-secondary" type="button" aria-label="截图当前标签页" title="截取当前标签页可见区域" onClick={() => void handleCaptureVisibleTab()}>
-            截图
-          </button>
-        ) : null}
-      </div>
       {pageContext.truncated ? <p className="text-sm text-[var(--color-warning)]">内容已截断，请细化 CSS/XPath</p> : null}
       {pageContext.error ? <p className="text-sm text-[var(--color-error)]">{pageContext.error}</p> : null}
       {attachmentError ? <p className="text-sm text-[var(--color-error)]">{attachmentError}</p> : null}
-      <div className="chat-input-shell">
+      <div className="composer-toolbar">
+        <ModelSelector />
+        <span className="composer-toolbar-divider" aria-hidden="true" />
+        <button
+          className="icon-btn"
+          type="button"
+          aria-label="新建对话"
+          data-tip="新建对话"
+          onClick={() => void createChatSession({ preserveSelectedModel: composerHasDraft })}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+        <button className="icon-btn" type="button" aria-label="历史" data-tip="历史会话" onClick={onOpenHistory}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 3" />
+          </svg>
+        </button>
+        {currentModelSupportsVision ? (
+          <button
+            className="icon-btn act-shot"
+            type="button"
+            aria-label="截图当前标签页"
+            data-tip="截取当前标签页可见区域"
+            onClick={() => void handleCaptureVisibleTab()}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" />
+              <circle cx="12" cy="14" r="3.2" />
+            </svg>
+          </button>
+        ) : null}
+        <label
+          className={`icon-btn icon-btn-label act-upload${currentModelSupportsVision ? "" : " icon-btn-disabled"}`}
+          htmlFor={imageInputId}
+          aria-hidden="true"
+          data-tip={currentModelSupportsVision ? "上传图片" : "当前模型不支持视觉理解"}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <circle cx="9" cy="10" r="1.6" />
+            <path d="m5 18 5-5 3 3 3-3 3 3" />
+          </svg>
+        </label>
+        <button
+          className="icon-btn act-refresh"
+          type="button"
+          aria-label="刷新页面上下文"
+          data-tip="刷新页面上下文"
+          onClick={() => void refreshPageContext()}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 12a8 8 0 1 1-2.3-5.6" />
+            <path d="M20 4v5h-5" />
+          </svg>
+        </button>
+        <button
+          className="icon-btn"
+          type="button"
+          aria-label="打开当前聊天设置"
+          data-tip="聊天设置"
+          onClick={onOpenChatPreferences}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 7h-8m0 0a2 2 0 1 1-4 0m4 0h6M3 17h6m0 0a2 2 0 1 1 4 0m-4 0h8" />
+          </svg>
+        </button>
+      </div>
+      <div className="input-box">
         <input
           id={imageInputId}
           className="sr-only"
@@ -721,13 +757,34 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
           disabled={!currentModelSupportsVision}
           onChange={handleImageInputChange}
         />
-        <label
-          className={`image-upload-button${currentModelSupportsVision ? "" : " image-upload-button-disabled"}`}
-          htmlFor={imageInputId}
-          title={currentModelSupportsVision ? "上传图片" : "当前模型不支持视觉理解"}
-        >
-          <span aria-hidden="true">▣</span>
-        </label>
+        {attachments.length > 0 ? (
+          <div className="image-preview-strip" aria-label="已添加图片">
+            {attachments.map((attachment) => (
+              <div className="image-preview-thumb-wrap" key={attachment.id}>
+                <button className="image-preview-thumb" type="button" aria-label={`查看图片 ${attachment.name}`} onClick={() => setPreviewAttachment(attachment)}>
+                  <img src={attachment.dataUrl} alt="" />
+                </button>
+                <button
+                  className="image-preview-remove"
+                  type="button"
+                  aria-label={`删除图片 ${attachment.name}`}
+                  title="删除图片"
+                  onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="ctx-chip-row">
+          <span className="ctx-chip" data-tip={matchedRuleLabel} tabIndex={0}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2Z" />
+            </svg>
+            <span className="ctx-chip-text">{matchedRuleLabel}</span>
+          </span>
+        </div>
         <PromptInlineEditor
           className="ui-input chat-input"
           ariaLabel="对话输入"
@@ -766,28 +823,38 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
             )}
           </div>
         ) : null}
-      </div>
-      <div className="composer-actions">
-        <div className="composer-switches">
+      <div className="input-bottom">
           <div className="composer-mode-menu-wrap">
             <button
-              className={`composer-mode-trigger composer-mode-trigger-${effectiveBrowserAutomationMode}`}
+              className="icon-btn dot-icon-on"
               type="button"
               aria-label="浏览器自动化模式"
               aria-haspopup="listbox"
               aria-expanded={modeMenuOpen}
-              disabled={!browserControlEnabled}
-              title="浏览器自动化模式"
+              data-tip={browserControlEnabled ? `浏览器控制：${browserAutomationModeLabel}` : "浏览器控制已关闭"}
               onClick={() => setModeMenuOpen((open) => !open)}
             >
-              <span>{browserAutomationModeLabel}</span>
-              <span className="composer-mode-chevron" aria-hidden="true" />
+              <svg className="composer-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d={BROWSER_AUTOMATION_MODE_OPTIONS.find((option) => option.mode === effectiveBrowserAutomationMode)?.iconPath ?? BROWSER_AUTOMATION_MODE_OPTIONS[0].iconPath} />
+              </svg>
             </button>
-            {modeMenuOpen && browserControlEnabled ? (
+            {modeMenuOpen ? (
               <div className="composer-mode-menu" role="listbox" aria-label="浏览器自动化模式">
-                <div className="composer-mode-menu-header">
-                  <span>选择浏览器自动化模式</span>
-                  <span>本轮生效</span>
+                <div className="composer-mode-master">
+                  <div className="composer-mode-master-copy">
+                    <span>浏览器控制</span>
+                    <p className="composer-mode-master-hint">开启后扩展会通过 Chrome 调试协议连接当前普通网页，浏览器会显示正在调试提示。</p>
+                  </div>
+                  <button
+                    aria-label="浏览器控制总开关"
+                    aria-checked={browserControlEnabled}
+                    className="composer-mode-master-switch"
+                    type="button"
+                    role="switch"
+                    onClick={() => void setBrowserControlEnabled(!browserControlEnabled)}
+                  >
+                    {browserControlEnabled ? "已开启" : "已关闭"}
+                  </button>
                 </div>
                 {BROWSER_AUTOMATION_MODE_OPTIONS.map((option) => (
                   <button
@@ -798,6 +865,9 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
                     aria-selected={option.mode === effectiveBrowserAutomationMode}
                     onClick={() => {
                       setModeMenuOpen(false);
+                      if (option.mode !== "normal_restricted" && !browserControlEnabled) {
+                        void setBrowserControlEnabled(true);
+                      }
                       void setBrowserAutomationMode(option.mode);
                     }}
                   >
@@ -826,7 +896,7 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
               aria-expanded={toolMenuOpen}
               aria-haspopup="dialog"
               aria-pressed={toolCallingEnabled}
-              title={toolCallingLabel}
+              data-tip={toolCallingLabel}
               onClick={toggleToolMenu}
             >
               <svg className="composer-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -923,6 +993,7 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
           </div>
           <ComposerSwitch
             ariaLabel="拼接上下文"
+            className="act-append"
             checked={appendPageContextToSystemPrompt}
             icon="appendContext"
             label="拼接上下文"
@@ -930,13 +1001,28 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
           />
           <ComposerSwitch
             ariaLabel="提取模式"
+            className="act-extract"
             checked={contextMode === "all"}
             icon={contextMode === "all" ? "extractAll" : "extractText"}
             label={contextModeLabel}
             onToggle={() => setContextMode(contextMode === "all" ? "text" : "all")}
           />
-        </div>
-        <div className="composer-submit-group">
+          <button
+            className="icon-btn"
+            type="button"
+            aria-label="选择标签页"
+            data-tip="选择注入标签页"
+            onClick={() => {
+              setContextDialogOpen(true);
+              void loadContextTabs();
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M3 9h18M9 9v11" />
+            </svg>
+          </button>
+          <span className="input-bottom-spacer" aria-hidden="true" />
           <TokenUsageMeter
             usage={sessionTokenUsage}
             contextTokens={currentContextTokens}
@@ -945,8 +1031,9 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
             sending={sending}
           />
           <button
-            className={sending && !hasDraft ? "ui-button-primary composer-abort-button" : "ui-button-primary"}
+            className={sending && !hasDraft ? "composer-send-circle composer-send-stop" : "composer-send-circle"}
             type="button"
+            aria-label={submitButtonLabel}
             disabled={sending ? false : !canSubmit}
             onClick={() => {
               if (sending && !hasDraft) {
@@ -956,7 +1043,9 @@ export function ChatComposer({ canSend, matchedRuleLabel }: ChatComposerProps) {
               void (sending ? submitFollowUp() : submit());
             }}
           >
-            {submitButtonLabel}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              {sending && !hasDraft ? <rect x="8" y="8" width="8" height="8" rx="1.5" /> : <path d="M12 19V5m0 0-6 6m6-6 6 6" />}
+            </svg>
           </button>
         </div>
       </div>

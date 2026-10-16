@@ -296,11 +296,20 @@ function stubFileReaderError() {
 }
 
 describe("App", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     registeredModelToolsMock.tools = [];
     useAppStore.getState().reset();
+    // 会话列表测试依赖默认展开；真实出厂默认已改为收起（只对真实用户生效）。
+    await saveAppSetting({
+      key: "chatPreferences",
+      value: { historyDrawerDefaultOpen: true },
+      updatedAt: 1,
+    });
+    useAppStore.setState({
+      chatPreferences: { ...useAppStore.getState().chatPreferences, historyDrawerDefaultOpen: true },
+    });
   });
 
   afterEach(async () => {
@@ -311,7 +320,7 @@ describe("App", () => {
   it("渲染侧边栏应用标题", () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Browser AI Assistant" })).toBeInTheDocument();
+    expect(document.querySelector(".topbar-title")).toHaveTextContent("新对话");
   });
 
   it("顶部操作区提供新建对话入口并复用会话创建行为", async () => {
@@ -321,9 +330,7 @@ describe("App", () => {
       useAppStore.setState({ composerHasDraft: true });
     });
 
-    const header = screen.getByRole("heading", { name: "Browser AI Assistant" }).closest(".app-header");
-    const headerActions = header?.querySelector(".app-header-actions");
-    const newChatButton = within(headerActions as HTMLElement).getByRole("button", { name: "新建对话" });
+    const newChatButton = screen.getByRole("button", { name: "新建对话" });
     await user.click(newChatButton);
 
     await waitFor(() => expect(useAppStore.getState().chatSessions[0]?.title).toBe("新对话"));
@@ -368,7 +375,7 @@ describe("App", () => {
 
     const updateButton = await screen.findByRole("button", { name: "发现新版本 v3.7.0，点击前往下载" });
     const newChatButton = screen.getByRole("button", { name: "新建对话" });
-    expect(updateButton.nextElementSibling).toBe(newChatButton);
+    expect(updateButton.nextElementSibling).toHaveClass("topbar-title");
     expect(updateButton).toHaveClass("ui-button-secondary", "app-header-icon-button");
     expect(updateButton.querySelector(".app-update-icon")).not.toBeNull();
 
@@ -482,7 +489,7 @@ describe("App", () => {
     expect(styles).toContain("rgba(204, 120, 92, 1)");
     expect(styles).toContain("rgba(204, 120, 92, 0)");
     expect(styles).toContain("@keyframes session-running-border-pulse");
-    expect(styles).toContain(".composer-abort-button");
+    expect(styles).toContain(".composer-send-circle");
     expect(styles).toContain("background: var(--color-error)");
   });
 
@@ -504,7 +511,7 @@ describe("App", () => {
     expect(result.css).toContain(".session-item-canceled");
     expect(result.css).toContain("@keyframes session-running-border-pulse");
     expect(result.css).toMatch(/50%\s*{\s*border-color:\s*(?:rgba\(204,\s*120,\s*92,\s*0\)|#cc785c00);?\s*}/);
-    expect(result.css).toContain(".composer-abort-button");
+    expect(result.css).toContain(".composer-send-circle");
   });
 
   it("边界确认弹窗使用实体背景并在选择选项后允许提交", async () => {
@@ -1093,7 +1100,9 @@ describe("App", () => {
 
     const settingsButton = screen.getByRole("button", { name: "打开当前聊天设置" });
     const exportButton = await screen.findByRole("button", { name: "导出当前聊天" });
-    expect(settingsButton.nextElementSibling).toContainElement(exportButton);
+    const topbar = exportButton.closest(".topbar");
+    expect(topbar).toContainElement(exportButton);
+    expect(topbar).not.toContainElement(settingsButton);
 
     await user.click(exportButton);
     expect(screen.getByRole("menuitem", { name: "Markdown" })).toBeInTheDocument();
@@ -1123,13 +1132,13 @@ describe("App", () => {
 
     const exportButton = await screen.findByRole("button", { name: "导出当前聊天" });
     const privateButton = screen.getByRole("button", { name: "进入隐私模式" });
-    expect(exportButton.parentElement?.nextElementSibling).toBe(privateButton);
+    expect(exportButton.closest(".topbar-export-menu-wrap")?.previousElementSibling).toBe(privateButton);
 
     await user.click(privateButton);
 
     const saveButton = screen.getByRole("button", { name: "保存隐私对话" });
-    expect(saveButton).toHaveTextContent("保存");
-    expect(saveButton).toHaveClass("chat-private-trigger-active");
+    expect(saveButton).toHaveAttribute("aria-label", "保存隐私对话");
+    expect(saveButton).toHaveClass("act-privacy");
   });
 
   it("已存在且包含消息的历史会话不显示隐私按钮", async () => {
@@ -1211,7 +1220,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "继续保留" }));
 
     expect(screen.getByRole("button", { name: "保存隐私对话" })).toBeInTheDocument();
-    expect(screen.getByText("隐私问题")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("消息列表")).getByText("隐私问题")).toBeInTheDocument();
   });
 
   it("隐私模式有消息时确认切换历史会话会丢弃隐私对话", async () => {
@@ -2110,30 +2119,20 @@ describe("App", () => {
     const modelSelector = document.querySelector(".model-selector");
     const toggleButton = screen.getByRole("button", { name: "折叠历史对话" });
 
-    expect(modelSelector?.previousElementSibling).toBe(toggleButton);
+    expect(toggleButton.closest(".topbar")).not.toBeNull();
+    expect(modelSelector?.closest(".composer-toolbar")).not.toBeNull();
     await userEvent.click(toggleButton);
     expect(screen.queryByLabelText("历史会话")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "展开历史对话" })).toHaveAttribute("aria-expanded", "false");
-    expect(styles).toContain("grid-template-columns: 0 minmax(0, 1fr);");
+    expect(styles).toContain("grid-template-columns: minmax(0, 1fr);");
     expect(styles).toContain("transition:");
     expect(styles).toContain("transform:");
     expect(styles).toContain("opacity:");
-    expect(styles).toContain(".chat-model-row {");
+    expect(styles).toContain(".composer-toolbar {");
     expect(styles).toContain("position: relative;");
-    expect(styles).toContain(".chat-history-panel-toggle");
-    expect(styles).toMatch(/\.chat-history-panel-toggle\s*\{[^}]*display:\s*none;/s);
-    expect(styles).toMatch(/@media \(min-width:\s*720px\)\s*\{[^}]*\.chat-history-panel-toggle\s*\{[^}]*display:\s*grid;/s);
-    expect(styles).toContain("left: 0;");
-    expect(styles).toContain("top: 50%;");
-    expect(styles).toContain("transform: translate(-50%, -50%);");
-    expect(styles).toContain("border-radius: 9999px;");
+    expect(styles).toContain(".chat-main-layout {");
+    expect(styles).toMatch(/\.chat-main-layout > \.session-list\s*\{[^}]*position:\s*absolute;/s);
     expect(styles).toMatch(/\.chat-panel\s*\{[^}]*overflow:\s*visible;/s);
-    expect(styles).toContain(".chat-history-panel-toggle::before");
-    expect(styles).toContain("box-shadow:");
-    expect(styles).toContain("0 -4px 0 currentColor");
-    expect(styles).toContain("0 4px 0 currentColor");
-    expect(styles).toContain("left: 50%;");
-    expect(styles).toContain("top: 50%;");
   });
 
   it("聊天主区域固定在面板内并只让消息列表内部滚动", async () => {
@@ -2605,7 +2604,7 @@ describe("App", () => {
 
     await user.click(buttons[1]);
     expect(screen.getByRole("dialog", { name: "确认重新生成" })).toBeInTheDocument();
-    await user.click(screen.getByRole("heading", { name: "Browser AI Assistant" }));
+    await user.click(document.querySelector(".topbar-title") as HTMLElement);
 
     expect(screen.queryByRole("dialog", { name: "确认重新生成" })).not.toBeInTheDocument();
     expect(regenerateMessage).not.toHaveBeenCalled();
@@ -2848,8 +2847,8 @@ describe("App", () => {
 
     const styles = readFileSync(resolve(process.cwd(), "src/side-panel/styles.css"), "utf8");
     expect(await screen.findByText(/需要两端对齐的聊天正文/)).toBeInTheDocument();
-    expect(styles).toContain("text-align: justify;");
-    expect(styles).toContain("text-align-last: left;");
+    expect(styles).not.toContain("text-align: justify;");
+    expect(styles).not.toContain("text-align-last: left;");
     expect(styles).toContain(".markdown-code-block-body pre");
     expect(styles).toContain("text-align: left;");
   });
@@ -2862,9 +2861,9 @@ describe("App", () => {
     render(<App />);
 
     const styles = readFileSync(resolve(process.cwd(), "src/side-panel/styles.css"), "utf8");
-    const activeTitle = await screen.findByText(/sdfsadfsadfsadfsdfsdfs/);
+    const activeTitle = await within(screen.getByLabelText("历史会话")).findByText(/sdfsadfsadfsadfsdfsdfs/);
     await user.click(screen.getByRole("button", { name: /已归档/ }));
-    const archivedTitle = await screen.findByText(/看看这个仓库是做什么的/);
+    const archivedTitle = await within(screen.getByLabelText("历史会话")).findByText(/看看这个仓库是做什么的/);
     const activeTitleButton = activeTitle.closest("button");
 
     expect(activeTitle).toHaveClass("session-item-title");
@@ -2968,8 +2967,7 @@ describe("App", () => {
     expect(streamSwitch).toHaveAttribute("aria-checked", "true");
     const appendContextSwitch = screen.getByRole("switch", { name: "拼接上下文" });
     expect(appendContextSwitch).toHaveAttribute("aria-checked", "true");
-    expect(appendContextSwitch.closest(".context-strip")).toBeNull();
-    expect(appendContextSwitch.closest(".composer-switches")).not.toBeNull();
+    expect(appendContextSwitch.closest(".input-bottom")).not.toBeNull();
     await user.click(appendContextSwitch);
     expect(screen.getByRole("switch", { name: "拼接上下文" })).toHaveAttribute("aria-checked", "false");
     await user.click(streamSwitch);
@@ -4710,7 +4708,7 @@ describe("App", () => {
 
     await screen.findByDisplayValue("视觉渠道 / 视觉模型 · 视觉");
     const screenshotButton = screen.getByRole("button", { name: "截图当前标签页" });
-    expect(screenshotButton).toHaveClass("ui-button-secondary");
+    expect(screenshotButton).toHaveClass("icon-btn");
     expect(screenshotButton).not.toHaveClass("composer-switch");
     await user.click(screenshotButton);
 
@@ -5391,17 +5389,17 @@ describe("App", () => {
     const streamSwitch = screen.getByRole("switch", { name: "流式响应" });
     const toolCallingButton = screen.getByRole("button", { name: "工具调用：已启用" });
     const contextSwitch = screen.getByRole("switch", { name: "提取模式" });
-    const contextStrip = document.querySelector(".context-strip");
+    const inputBottom = appendContextSwitch.closest(".input-bottom");
 
     expect(appendContextSwitch).toHaveAttribute("aria-checked", "true");
-    expect(appendContextSwitch.closest(".composer-switches")).not.toBeNull();
-    expect(contextStrip?.contains(appendContextSwitch)).toBe(false);
+    expect(inputBottom).not.toBeNull();
+    expect(inputBottom?.contains(contextSwitch)).toBe(true);
     expect(appendContextSwitch.nextElementSibling).toBe(contextSwitch);
     expect(streamSwitch).toHaveAttribute("aria-checked", "true");
     expect(toolCallingButton).toHaveAttribute("aria-pressed", "true");
     expect(toolCallingButton).not.toBeDisabled();
     expect(contextSwitch).toHaveAttribute("aria-checked", "false");
-    expect(contextSwitch).toHaveAttribute("title", "提取文本");
+    expect(contextSwitch).toHaveAttribute("data-tip", "提取文本");
     expect(streamSwitch).toHaveClass("composer-switch");
     expect(screen.queryByRole("checkbox", { name: "流式响应" })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "提取文本" })).not.toBeInTheDocument();
@@ -5414,10 +5412,10 @@ describe("App", () => {
     expect(screen.getByRole("switch", { name: "流式响应" })).toHaveAttribute("aria-checked", "false");
     expect(screen.getByRole("button", { name: "工具调用：已启用" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("title", "提取所有");
+    expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("data-tip", "提取所有");
   });
 
-  it("全局浏览器控制按钮位于设置按钮左侧并更新运行态", async () => {
+  it("浏览器控制总开关集成在自动化模式菜单中并更新运行态", async () => {
     const user = userEvent.setup();
     const setBrowserControlEnabled = vi.fn(async (enabled: boolean) => {
       useAppStore.setState({ browserControlEnabled: enabled });
@@ -5430,39 +5428,33 @@ describe("App", () => {
 
     render(<App />);
 
-    const browserControlButton = screen.getByRole("button", { name: "浏览器控制" });
     const settingsButton = screen.getByRole("button", { name: "设置" });
-    expect(browserControlButton.nextElementSibling).toBe(settingsButton);
-    expect(browserControlButton).toHaveClass("ui-button-secondary", "app-header-icon-button");
-    expect(settingsButton).toHaveClass("ui-button-secondary", "app-header-icon-button");
-    expect(browserControlButton).toHaveTextContent("");
+    expect(settingsButton).toHaveClass("icon-btn");
     expect(settingsButton).toHaveTextContent("");
-    expect(browserControlButton).not.toHaveClass("browser-control-global-button-active");
-    expect(browserControlButton).toHaveAttribute("aria-pressed", "false");
-    expect(browserControlButton).toHaveAttribute("title", expect.stringContaining("Chrome 调试协议"));
-    expect(settingsButton).toHaveAttribute("title", "设置");
-    expect(browserControlButton.querySelector(".app-header-icon")).not.toBeNull();
-    expect([...browserControlButton.querySelectorAll(".app-header-icon path")].map((path) => path.getAttribute("d")).join(" ")).not.toContain("l-2 3");
-    expect(settingsButton.querySelector(".app-header-icon")).not.toBeNull();
     expect(screen.queryByRole("checkbox", { name: "启用浏览器自动化控制" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "运行时只读分析" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toBeDisabled();
 
-    await user.click(browserControlButton);
+    const modeButton = screen.getByRole("button", { name: "浏览器自动化模式" });
+    expect(modeButton).not.toBeDisabled();
+    await user.click(modeButton);
 
+    const masterSwitch = screen.getByRole("switch", { name: "浏览器控制总开关" });
+    expect(masterSwitch).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("option", { name: /普通模式/ })).not.toBeDisabled();
+    await user.click(masterSwitch);
     expect(setBrowserControlEnabled).toHaveBeenCalledWith(true);
-    await waitFor(() => expect(screen.getByRole("button", { name: "浏览器控制" })).toHaveAttribute("aria-pressed", "true"));
-    expect(screen.getByRole("button", { name: "浏览器控制" })).toHaveClass("browser-control-global-button-active");
-    expect(screen.getByRole("button", { name: "浏览器自动化模式" })).not.toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("switch", { name: "浏览器控制总开关" })).toHaveAttribute("aria-checked", "true"));
+
+    await user.click(screen.getByRole("option", { name: /受控增强/ }));
+    expect(setBrowserControlEnabled).toHaveBeenCalledWith(true);
 
     const styles = readFileSync(resolve(process.cwd(), "src/side-panel/styles.css"), "utf8");
-    expect(styles).toContain(".app-header-icon-button");
-    expect(styles.indexOf(".ui-button-secondary.browser-control-global-button-active")).toBeGreaterThan(styles.indexOf(".ui-button-secondary"));
-    expect(styles).toContain(".composer-mode-trigger");
-    expect(styles).toContain(".composer-mode-menu-header");
+    expect(styles).toContain(".composer-mode-master");
+    expect(styles).toContain(".composer-send-circle");
   });
 
-  it("用户点击 Chrome 调试提示栏取消后回滚全局浏览器控制按钮状态", async () => {
+  it("用户点击 Chrome 调试提示栏取消后回滚浏览器控制总开关状态", async () => {
+    const user = userEvent.setup();
     let runtimeListener: ((message: unknown) => void) | undefined;
     const addListener = vi.fn((listener: (message: unknown) => void) => {
       runtimeListener = listener;
@@ -5480,16 +5472,14 @@ describe("App", () => {
 
     const { unmount } = render(<App />);
 
-    const browserControlButton = screen.getByRole("button", { name: "浏览器控制" });
-    expect(browserControlButton).toHaveAttribute("aria-pressed", "true");
-    expect(browserControlButton).toHaveClass("browser-control-global-button-active");
+    await user.click(screen.getByRole("button", { name: "浏览器自动化模式" }));
+    expect(screen.getByRole("switch", { name: "浏览器控制总开关" })).toHaveAttribute("aria-checked", "true");
 
     act(() => {
       runtimeListener?.({ type: "browserControl.detached", tabId: 9, reason: "canceled_by_user" });
     });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "浏览器控制" })).toHaveAttribute("aria-pressed", "false"));
-    expect(screen.getByRole("button", { name: "浏览器控制" })).not.toHaveClass("browser-control-global-button-active");
+    expect(await screen.findByRole("switch", { name: "浏览器控制总开关" })).toHaveAttribute("aria-checked", "false");
     expect(useAppStore.getState().browserControlEnabled).toBe(false);
     expect(useAppStore.getState().runtimeReadonlyEnabled).toBe(false);
 
@@ -5525,8 +5515,7 @@ describe("App", () => {
       });
     });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveTextContent("受控增强"));
-    expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveClass("composer-mode-trigger-controlled_enhanced");
+    expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveAttribute("data-tip", "浏览器控制：受控增强");
 
     act(() => {
       runtimeListener?.({
@@ -5537,7 +5526,7 @@ describe("App", () => {
       });
     });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveTextContent("受控增强"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveAttribute("data-tip", "浏览器控制：受控增强"));
 
     act(() => {
       runtimeListener?.({
@@ -5547,7 +5536,7 @@ describe("App", () => {
       });
     });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveTextContent("普通模式"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveAttribute("data-tip", "浏览器控制：普通模式"));
     expect(useAppStore.getState().browserAutomationMode).toBe("normal_restricted");
 
     unmount();
@@ -5573,7 +5562,7 @@ describe("App", () => {
     await user.click(modeButton);
 
     expect(screen.getByRole("listbox", { name: "浏览器自动化模式" })).toBeInTheDocument();
-    expect(screen.getByText("选择浏览器自动化模式")).toBeInTheDocument();
+    expect(screen.getByText("浏览器控制")).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /受控增强/ })).toHaveTextContent("允许 AI 请求一次性边界授权");
     expect(screen.getByRole("option", { name: /完全访问/ })).toHaveTextContent("最高风险");
 
@@ -5581,8 +5570,7 @@ describe("App", () => {
 
     expect(setBrowserAutomationMode).toHaveBeenCalledWith("full_access");
     expect(confirmSpy).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveTextContent("完全访问"));
-    expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveClass("composer-mode-trigger-full_access");
+    expect(screen.getByRole("button", { name: "浏览器自动化模式" })).toHaveAttribute("data-tip", "浏览器控制：完全访问");
 
     confirmSpy.mockRestore();
   });
@@ -5648,7 +5636,7 @@ describe("App", () => {
     render(<App />);
 
     const toolCallingButton = screen.getByRole("button", { name: "工具调用：已关闭" });
-    expect(toolCallingButton.closest(".composer-switches")).not.toBeNull();
+    expect(toolCallingButton.closest(".input-bottom")).not.toBeNull();
     expect(toolCallingButton).not.toBeDisabled();
     expect(toolCallingButton).toHaveAttribute("aria-pressed", "false");
 
@@ -5843,10 +5831,10 @@ describe("App", () => {
 
     expect(await screen.findByText("已匹配规则：正文规则")).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("title", "提取文本");
+    expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("data-tip", "提取文本");
     await user.click(screen.getByRole("switch", { name: "提取模式" }));
     expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("title", "提取所有");
+    expect(screen.getByRole("switch", { name: "提取模式" })).toHaveAttribute("data-tip", "提取所有");
 
     await user.click(screen.getByRole("switch", { name: "流式响应" }));
     await user.type(screen.getByLabelText("对话输入"), "总结页面");
@@ -5902,7 +5890,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("重试进度");
+    await within(screen.getByLabelText("历史会话")).findByText("重试进度");
     act(() => {
       useAppStore.setState({
         chatRetryProgressByMessageId: {
@@ -6074,7 +6062,7 @@ describe("App", () => {
     expect(archiveBottom?.parentElement).not.toHaveClass("session-list-scroll");
 
     await user.click(getSessionListNewChatButton());
-    expect(await screen.findByText("新对话")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("历史会话")).findByText("新对话")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "删 新对话" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "会话操作 新对话" }));
@@ -6087,10 +6075,10 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "会话操作 新对话" }));
     await user.click(screen.getByRole("menuitem", { name: "删除" }));
     expect(screen.getByRole("menuitem", { name: "确认删除" })).toBeInTheDocument();
-    expect(screen.getByText("新对话")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("历史会话")).getByText("新对话")).toBeInTheDocument();
 
     await user.click(screen.getByRole("menuitem", { name: "确认删除" }));
-    await waitFor(() => expect(screen.queryByText("新对话")).not.toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByLabelText("历史会话")).queryByText("新对话")).not.toBeInTheDocument());
   });
 
   it("批量操作按钮位于历史头部操作区最左边", () => {
@@ -6257,7 +6245,7 @@ describe("App", () => {
     await user.clear(input);
     await user.type(input, "新标题{Enter}");
 
-    expect(await screen.findByText("新标题")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("历史会话")).findByText("新标题")).toBeInTheDocument();
     expect(screen.queryByText("会话：新标题")).not.toBeInTheDocument();
     expect(useAppStore.getState().chatSessions.find((item) => item.id === "session-rename")?.title).toBe("新标题");
   });
@@ -6273,7 +6261,7 @@ describe("App", () => {
     let input = screen.getByLabelText("重命名会话");
     await user.clear(input);
     await user.type(input, "首次保存{Enter}");
-    expect(await screen.findByText("首次保存")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("历史会话")).findByText("首次保存")).toBeInTheDocument();
 
     await user.click(await screen.findByRole("button", { name: "会话操作 首次保存" }));
     await user.click(screen.getByRole("menuitem", { name: "重命名" }));
@@ -6282,7 +6270,7 @@ describe("App", () => {
     await user.type(input, "失焦保存");
     fireEvent.blur(input);
 
-    expect(await screen.findByText("失焦保存")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("历史会话")).findByText("失焦保存")).toBeInTheDocument();
     expect(useAppStore.getState().chatSessions.find((item) => item.id === "session-enter-blur")?.title).toBe("失焦保存");
   });
 
@@ -6297,7 +6285,7 @@ describe("App", () => {
     let input = screen.getByLabelText("重命名会话");
     await user.clear(input);
     await user.type(input, "取消标题{Escape}");
-    expect(await screen.findByText("保留标题")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("历史会话")).findByText("保留标题")).toBeInTheDocument();
 
     await user.click(await screen.findByRole("button", { name: "会话操作 保留标题" }));
     await user.click(screen.getByRole("menuitem", { name: "重命名" }));
@@ -6306,7 +6294,7 @@ describe("App", () => {
     await user.type(input, "失焦标题");
     fireEvent.blur(input);
 
-    expect(await screen.findByText("失焦标题")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("历史会话")).findByText("失焦标题")).toBeInTheDocument();
     expect(useAppStore.getState().chatSessions.find((item) => item.id === "session-escape-blur")?.title).toBe("失焦标题");
   });
 
@@ -6505,16 +6493,16 @@ describe("App", () => {
 
     const folderButton = (await screen.findByText("项目资料")).closest("button");
     expect(folderButton).toBeInTheDocument();
-    expect(screen.queryByText("资料会话")).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("历史会话")).queryByText("资料会话")).not.toBeInTheDocument();
     expect(folderButton).toHaveAttribute("aria-expanded", "false");
 
     await user.click(folderButton as Element);
-    expect(screen.getByText("资料会话")).toBeInTheDocument();
-    expect(screen.queryByText("会话：资料会话")).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("历史会话")).getByText("资料会话")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("历史会话")).queryByText("会话：资料会话")).not.toBeInTheDocument();
     expect(folderButton).toHaveAttribute("aria-expanded", "true");
 
     await user.click(folderButton as Element);
-    expect(screen.queryByText("资料会话")).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("历史会话")).queryByText("资料会话")).not.toBeInTheDocument();
   });
   it("图片输入限制最多 5 张且单张不能超过 5MB", async () => {
     const user = userEvent.setup();

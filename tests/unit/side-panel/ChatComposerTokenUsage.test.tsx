@@ -51,7 +51,7 @@ describe("ChatComposer Token 用量", () => {
       ],
     });
 
-    render(<ChatComposer canSend matchedRuleLabel="" />);
+    render(<ChatComposer canSend matchedRuleLabel="" onOpenHistory={() => {}} onOpenChatPreferences={() => {}} />);
 
     const meter = screen.getByRole("progressbar", { name: "Token 用量" });
     expect(meter).not.toHaveAttribute("title");
@@ -59,7 +59,7 @@ describe("ChatComposer Token 用量", () => {
     expect(Number(meter.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
     expect(meter.closest(".token-usage-meter-wrap")).not.toHaveTextContent("输入 1.5k");
     expect(meter.closest(".context-strip")).toBeNull();
-    expect(meter.closest(".composer-submit-group")).toContainElement(screen.getByRole("button", { name: "发送" }));
+    expect(meter.closest(".input-bottom")).toContainElement(screen.getByRole("button", { name: "发送" }));
 
     const tooltipId = meter.getAttribute("aria-describedby");
     const tooltip = tooltipId ? document.getElementById(tooltipId) : null;
@@ -75,7 +75,7 @@ describe("ChatComposer Token 用量", () => {
   });
 
   it("没有会话用量时展示空态", () => {
-    render(<ChatComposer canSend matchedRuleLabel="" />);
+    render(<ChatComposer canSend matchedRuleLabel="" onOpenHistory={() => {}} onOpenChatPreferences={() => {}} />);
 
     const meter = screen.getByRole("progressbar", { name: "Token 用量" });
     const tooltipId = meter.getAttribute("aria-describedby");
@@ -86,7 +86,7 @@ describe("ChatComposer Token 用量", () => {
   it("发送中且尚无用量时展示统计中", () => {
     useAppStore.setState({ sending: true });
 
-    render(<ChatComposer canSend matchedRuleLabel="" />);
+    render(<ChatComposer canSend matchedRuleLabel="" onOpenHistory={() => {}} onOpenChatPreferences={() => {}} />);
 
     const meter = screen.getByRole("progressbar", { name: "Token 用量" });
     const tooltipId = meter.getAttribute("aria-describedby");
@@ -95,7 +95,7 @@ describe("ChatComposer Token 用量", () => {
   });
 
   it("当前上下文 Token 数会包含输入框草稿", () => {
-    render(<ChatComposer canSend matchedRuleLabel="" />);
+    render(<ChatComposer canSend matchedRuleLabel="" onOpenHistory={() => {}} onOpenChatPreferences={() => {}} />);
     const meter = screen.getByRole("progressbar", { name: "Token 用量" });
     const before = meter.getAttribute("aria-valuenow");
 

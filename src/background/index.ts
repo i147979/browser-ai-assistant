@@ -33,11 +33,17 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "打开 AI 助手",
     contexts: ["page"],
   });
+  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error) => {
+    console.error("设置扩展图标切换侧边栏失败", error);
+  });
   runRestoreSyncAlarmFromSettings();
   runReleaseUpdateCheck();
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error) => {
+    console.error("设置扩展图标切换侧边栏失败", error);
+  });
   runRestoreSyncAlarmFromSettings();
   runReleaseUpdateCheck();
 });
@@ -71,10 +77,6 @@ async function openSidePanel(tabId?: number) {
 
   await chrome.sidePanel.open({ tabId });
 }
-
-chrome.action.onClicked.addListener((tab) => {
-  void openSidePanel(tab.id);
-});
 
 chrome.commands.onCommand.addListener((command) => {
   if (command !== "open-side-panel") {

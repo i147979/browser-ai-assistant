@@ -62,6 +62,7 @@ function createChromeMock() {
     chrome: {
       runtime: {
         lastError: undefined as { message: string } | undefined,
+        getContexts: vi.fn().mockResolvedValue([]),
         onInstalled: {
           addListener: vi.fn((listener: Listener<() => void>) => installedListeners.push(listener)),
         },
@@ -108,6 +109,7 @@ function createChromeMock() {
       },
       sidePanel: {
         open: vi.fn().mockResolvedValue(undefined),
+        setOptions: vi.fn().mockResolvedValue(undefined),
       },
       action: {
         onClicked: {
@@ -229,9 +231,25 @@ describe("background 入口", () => {
       id: 9,
     } as chrome.tabs.Tab);
 
+    await vi.waitFor(() => expect(mock.chrome.sidePanel.open).toHaveBeenCalledTimes(3));
     expect(mock.chrome.sidePanel.open).toHaveBeenNthCalledWith(1, { tabId: 3 });
     expect(mock.chrome.sidePanel.open).toHaveBeenNthCalledWith(2, { tabId: 7 });
     expect(mock.chrome.sidePanel.open).toHaveBeenNthCalledWith(3, { tabId: 9 });
+  });
+
+  it("扩展图标点击时若侧边栏已打开则收起而不重复打开", async () => {
+    const mock = createChromeMock();
+    (mock.chrome.runtime as { getContexts: unknown }).getContexts = vi
+      .fn()
+      .mockResolvedValue([{ documentUrl: "chrome-extension://abc/index.html" }]);
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await import("../../../src/background/index");
+
+    await mock.actionListeners[0]({ id: 7 } as chrome.tabs.Tab);
+
+    expect(mock.chrome.sidePanel.setOptions).toHaveBeenCalledWith({ tabId: 7, enabled: false });
+    expect(mock.chrome.sidePanel.open).not.toHaveBeenCalled();
   });
 
   it("注册渠道模型和页面上下文消息处理器", async () => {

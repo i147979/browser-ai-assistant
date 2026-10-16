@@ -275,6 +275,7 @@ export interface AppState {
   privateChatSession?: ChatSession;
   pendingDeleteSessionId?: string;
   composerHasDraft: boolean;
+  settingsOpen: boolean;
   chatTasksBySessionId: ChatTaskMap;
   dismissedChatTaskIdsBySessionId: Record<string, string>;
   followUpsBySessionId: Record<string, ChatFollowUpItem[]>;
@@ -352,6 +353,7 @@ export interface AppState {
   testModel: (providerId: string, modelId: string) => Promise<void>;
   selectModel: (modelId: string) => Promise<void>;
   setComposerHasDraft: (hasDraft: boolean) => void;
+  setSettingsOpen: (open: boolean) => void;
   setAppendPageContextToSystemPrompt: (enabled: boolean) => void;
   setStreamMode: (streamMode: boolean) => void;
   setContextMode: (contextMode: PageContextExtractMode) => void;
@@ -441,6 +443,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   privateChatSession: undefined,
   pendingDeleteSessionId: undefined,
   composerHasDraft: false,
+  settingsOpen: false,
   chatTasksBySessionId: {},
   dismissedChatTaskIdsBySessionId: {},
   followUpsBySessionId: {},
@@ -1202,6 +1205,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
   },
   setComposerHasDraft: (hasDraft) => set({ composerHasDraft: hasDraft }),
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
   setAppendPageContextToSystemPrompt: (enabled) => set({ appendPageContextToSystemPrompt: enabled }),
   setStreamMode: (streamMode) => set({ streamMode }),
   setContextMode: (contextMode) => {
@@ -1323,6 +1327,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       privateChatSession: undefined,
       pendingDeleteSessionId: undefined,
       composerHasDraft: false,
+      settingsOpen: false,
       chatTasksBySessionId: {},
       dismissedChatTaskIdsBySessionId: {},
       followUpsBySessionId: {},

@@ -24,6 +24,7 @@ import { MarkdownCodeBlock, MarkdownCodePre } from "./MarkdownCodeBlock";
 import { MarkdownTableBlock } from "./MarkdownTableBlock";
 import { CopyMessageIcon, ExportImageIcon } from "./MessageActionIcons";
 import { PromptInlineEditor, PromptTokenContent } from "./PromptInlineEditor";
+import { useAppStore } from "../state/appStore";
 import type { ChatRetryProgress } from "../state/appStore";
 
 const MESSAGE_LIST_BOTTOM_THRESHOLD = 8;
@@ -48,6 +49,7 @@ export function MessageList({
   onEditAndRegenerateUserMessage,
   regenerating,
 }: MessageListProps) {
+  const models = useAppStore((state) => state.models);
   const [previewAttachment, setPreviewAttachment] = useState<ChatImageAttachment | undefined>();
   const [pendingRegenerateMessageId, setPendingRegenerateMessageId] = useState<string | undefined>();
   const [editingMessageId, setEditingMessageId] = useState<string | undefined>();
@@ -63,6 +65,10 @@ export function MessageList({
   const displayAttachmentGroups = useMemo(
     () => createDisplayAttachmentGroups(messages, toolCallDisplayMode, toolAttachmentsById),
     [messages, toolCallDisplayMode, toolAttachmentsById],
+  );
+  const modelNameById = useMemo(
+    () => new Map(models.map((model) => [model.id, model.displayName || model.modelId])),
+    [models],
   );
 
   const handleMessageListScroll = () => {
@@ -205,10 +211,12 @@ export function MessageList({
           ) : null}
         {hasVisibleArticle ? (
         <article className={message.role === "user" ? "message-row message-row-user" : "message-row"}>
-          <div className="message-avatar" aria-hidden="true">
-            {message.role === "user" ? "我" : "AI"}
-          </div>
           <div className="message-bubble-wrap">
+            {message.role === "assistant" ? (
+              <div className="ai-message-header">
+                <span className="ai-message-model">{modelNameById.get(message.modelId) ?? message.modelId}</span>
+              </div>
+            ) : null}
             {hasVisibleThinking ? (
               <details className="message-thinking" open={shouldOpenThinking(message) || undefined}>
                 <summary>{message.streaming ? "思考中" : "思考过程"}</summary>

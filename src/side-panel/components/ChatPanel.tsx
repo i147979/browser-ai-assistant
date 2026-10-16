@@ -1,26 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ChatPreferenceDrawer } from "./ChatPreferenceDrawer";
 import { ChatComposer } from "./ChatComposer";
 import { MessageList } from "./MessageList";
-import { ModelSelector } from "./ModelSelector";
 import { SessionHistoryDialog } from "./SessionHistoryDialog";
 import { useAppStore } from "../state/appStore";
-import { downloadChatSessionMarkdown, downloadChatSessionPdf, downloadChatSessionWord } from "../utils/chatMarkdownExport";
 
-interface ChatPanelProps {
-  historyPanelOpen: boolean;
-  onToggleHistoryPanel: () => void;
-}
-
-export function ChatPanel({ historyPanelOpen, onToggleHistoryPanel }: ChatPanelProps) {
+export function ChatPanel() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [chatPreferencesOpen, setChatPreferencesOpen] = useState(false);
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const exportMenuRef = useRef<HTMLDivElement>(null);
   const providers = useAppStore((state) => state.providers);
   const models = useAppStore((state) => state.models);
   const selectedModelId = useAppStore((state) => state.selectedModelId);
-  const addNotification = useAppStore((state) => state.addNotification);
   const chatRetryProgressByMessageId = useAppStore((state) => state.chatRetryProgressByMessageId);
   const regenerateMessage = useAppStore((state) => state.regenerateMessage);
   const editAndRegenerateUserMessage = useAppStore((state) => state.editAndRegenerateUserMessage);
@@ -33,8 +23,6 @@ export function ChatPanel({ historyPanelOpen, onToggleHistoryPanel }: ChatPanelP
   const storedActiveSession = useAppStore((state) => state.chatSessions.find((session) => session.id === state.activeSessionId));
   const privateModeActive = useAppStore((state) => state.privateModeActive);
   const privateChatSession = useAppStore((state) => state.privateChatSession);
-  const enterPrivateMode = useAppStore((state) => state.enterPrivateMode);
-  const savePrivateChatSession = useAppStore((state) => state.savePrivateChatSession);
   const activeSession = privateModeActive ? privateChatSession : storedActiveSession;
   const selectedModel = models.find((model) => model.id === selectedModelId);
   const selectedProvider = providers.find((provider) => provider.id === selectedModel?.providerId);
@@ -47,108 +35,8 @@ export function ChatPanel({ historyPanelOpen, onToggleHistoryPanel }: ChatPanelP
       : contextMode === "all"
         ? "全局 HTML"
         : "全局文本";
-  const canExport = Boolean(activeSession && activeSession.messages.length > 0);
-  const canShowPrivateButton = privateModeActive || !storedActiveSession || storedActiveSession.messages.length === 0;
-
-  useEffect(() => {
-    if (!exportMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Node && !exportMenuRef.current?.contains(target)) {
-        setExportMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [exportMenuOpen]);
-
-  const handleExport = async (format: "markdown" | "word" | "pdf") => {
-    if (!activeSession || activeSession.messages.length === 0) {
-      return;
-    }
-
-    setExportMenuOpen(false);
-    try {
-      if (format === "word") {
-        await downloadChatSessionWord(activeSession);
-        addNotification({ type: "success", title: "导出完成", message: "Word 文件已开始下载" });
-        return;
-      }
-
-      if (format === "pdf") {
-        await downloadChatSessionPdf(activeSession);
-        addNotification({ type: "success", title: "导出完成", message: "PDF 打印窗口已打开" });
-        return;
-      }
-
-      downloadChatSessionMarkdown(activeSession);
-      addNotification({ type: "success", title: "导出完成", message: "Markdown 文件已开始下载" });
-    } catch (error: unknown) {
-      addNotification({ type: "error", title: "导出失败", message: error instanceof Error ? error.message : "导出失败，请重试" });
-    }
-  };
-
   return (
     <section className="chat-panel">
-      <div className="chat-model-row">
-        <button
-          className="ui-button-secondary chat-history-panel-toggle"
-          type="button"
-          aria-label={historyPanelOpen ? "折叠历史对话" : "展开历史对话"}
-          aria-expanded={historyPanelOpen}
-          data-history-panel-open={historyPanelOpen}
-          onClick={onToggleHistoryPanel}
-        />
-        <ModelSelector />
-        <div className="chat-header-actions">
-          <button className="ui-button-secondary chat-history-trigger" type="button" onClick={() => setHistoryOpen(true)}>
-            历史
-          </button>
-          <button className="ui-button-secondary chat-drawer-trigger" type="button" aria-label="打开当前聊天设置" onClick={() => setChatPreferencesOpen(true)}>
-            ⚙
-          </button>
-          <div className="chat-export-menu-wrap" ref={exportMenuRef}>
-            <button
-              className="ui-button-secondary chat-export-trigger"
-              type="button"
-              aria-label="导出当前聊天"
-              aria-haspopup="menu"
-              aria-expanded={exportMenuOpen}
-              disabled={!canExport}
-              onClick={() => setExportMenuOpen((value) => !value)}
-            >
-              导出
-            </button>
-            {exportMenuOpen ? (
-              <div className="chat-export-menu" role="menu">
-                <button className="chat-export-menu-item" type="button" role="menuitem" onClick={() => void handleExport("markdown")}>
-                  Markdown
-                </button>
-                <button className="chat-export-menu-item" type="button" role="menuitem" onClick={() => void handleExport("word")}>
-                  Word
-                </button>
-                <button className="chat-export-menu-item" type="button" role="menuitem" onClick={() => void handleExport("pdf")}>
-                  PDF
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {canShowPrivateButton ? (
-            <button
-              className={privateModeActive ? "ui-button-secondary chat-private-trigger chat-private-trigger-active" : "ui-button-secondary chat-private-trigger"}
-              type="button"
-              aria-label={privateModeActive ? "保存隐私对话" : "进入隐私模式"}
-              onClick={() => void (privateModeActive ? savePrivateChatSession() : enterPrivateMode())}
-            >
-              {privateModeActive ? "保存" : "隐私"}
-            </button>
-          ) : null}
-        </div>
-      </div>
       <MessageList
         messages={activeSession?.messages ?? []}
         toolAttachmentsById={activeSession?.toolAttachmentsById}
@@ -160,7 +48,12 @@ export function ChatPanel({ historyPanelOpen, onToggleHistoryPanel }: ChatPanelP
         regenerating={sending}
       />
       {providers.length === 0 || models.length === 0 ? <p className="chat-warning">请先配置 API Key 后再开始对话</p> : null}
-      <ChatComposer canSend={canSend} matchedRuleLabel={matchedRuleLabel} />
+      <ChatComposer
+        canSend={canSend}
+        matchedRuleLabel={matchedRuleLabel}
+        onOpenHistory={() => setHistoryOpen(true)}
+        onOpenChatPreferences={() => setChatPreferencesOpen(true)}
+      />
       <SessionHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
       <ChatPreferenceDrawer open={chatPreferencesOpen} onOpenChange={setChatPreferencesOpen} />
     </section>
